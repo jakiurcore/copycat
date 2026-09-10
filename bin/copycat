@@ -87,7 +87,13 @@ main() {
         exit 1
     fi
 
-    dir=$(target_dir)
+    # An explicit directory (e.g. from the Nautilus "current folder" script)
+    # always wins over the focused-window guess.
+    if [[ -n "${1:-}" && -d "${1:-}" ]]; then
+        dir="$1"
+    else
+        dir=$(target_dir)
+    fi
 
     if mime=$(pick_image_mime "$types"); then
         save_image "$dir" "$mime"

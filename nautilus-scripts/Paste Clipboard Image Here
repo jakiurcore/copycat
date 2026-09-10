@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Nautilus "Scripts" entry: appears under right-click > Scripts.
+# Nautilus sets NAUTILUS_SCRIPT_CURRENT_URI to the folder being viewed —
+# this is the one place that folder is reliably knowable, since there's no
+# external API for it (see README's file-manager section).
+set -euo pipefail
+
+COPYCAT="$HOME/.local/bin/copycat"
+[[ -x "$COPYCAT" ]] || COPYCAT="copycat"
+
+dir=""
+if [[ -n "${NAUTILUS_SCRIPT_CURRENT_URI:-}" ]]; then
+    dir=$(python3 -c '
+import sys
+from urllib.parse import urlparse, unquote
+u = urlparse(sys.argv[1])
+print(unquote(u.path) if u.scheme == "file" else "")
+' "$NAUTILUS_SCRIPT_CURRENT_URI")
+fi
+
+if [[ -n "$dir" && -d "$dir" ]]; then
+    exec "$COPYCAT" "$dir"
+else
+    # Non-local location (e.g. sftp://, smb://) — let copycat fall back
+    # to its own detection instead of guessing a path here.
+    exec "$COPYCAT"
+fi
