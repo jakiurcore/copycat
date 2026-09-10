@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# copycat: dump clipboard content straight to a file, like pasting into Signal
+# but landing on disk instead of in a chat. Currently handles images;
+# text/uri-list support is meant to slot in as extra branches in save().
+set -euo pipefail
+
+DEFAULT_DIR="$HOME/Pictures/Clipboard"
+
+notify() {
+    notify-send -a copycat "$@" 2>/dev/null || true
+}
+
+# Find where to save: prefer the cwd of the shell running in the
+# currently focused terminal window, fall back to DEFAULT_DIR.
+target_dir() {
+    local pid children child cwd
+    pid=$(hyprctl activewindow -j 2>/dev/null | jq -r '.pid // empty') || true
+
+    if [[ -n "${pid:-}" ]]; then
+        children=$(pgrep -P "$pid" 2>/dev/null || true)
+        for child in $children; do
+            if cwd=$(readlink -f "/proc/$child/cwd" 2>/dev/null); then
+                echo "$cwd"
+                return 0
+            fi
+        done
+    fi
+
+    mkdir -p "$DEFAULT_DIR"
+    echo "$DEFAULT_DIR"
+}
+
+# Pick the best available image mime type from what's on the clipboard.
+pick_image_mime() {
+    local types="$1" mime
+    for mime in image/png image/jpeg image/jpg image/webp image/gif image/bmp image/tiff image/svg+xml; do
+        if grep -qx "$mime" <<<"$types"; then
+            echo "$mime"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ext_for_mime() {
+    case "$1" in
+        image/jpeg|image/jpg) echo "jpg" ;;
+        image/svg+xml) echo "svg" ;;
+        image/*) echo "${1#image/}" ;;
+    esac
+}
+
+save_image() {
+    local dir="$1" mime="$2" ext base name path n=0
+    ext=$(ext_for_mime "$mime")
+    base="clipboard-$(date +%Y%m%d-%H%M%S)"
+    name="$base.$ext"
+    path="$dir/$name"
+    while [[ -e "$path" ]]; do
+        n=$((n + 1))
+        path="$dir/$base-$n.$ext"
+    done
+
+    if ! wl-paste --type "$mime" > "$path" 2>/dev/null || [[ ! -s "$path" ]]; then
+        rm -f "$path"
+        notify -u critical "copycat" "Failed to read image from clipboard."
+        echo "error: wl-paste produced no data for $mime" >&2
+        exit 1
+    fi
+
+    notify -i "$path" "copycat" "Saved image to $path"
+    echo "$path"
+}
+
+main() {
+    local types dir mime
+
+    if ! command -v wl-paste >/dev/null; then
+        notify -u critical "copycat" "wl-clipboard not installed."
+        echo "error: wl-paste not found (install wl-clipboard)" >&2
+        exit 1
+    fi
+
+    types=$(wl-paste --list-types 2>/dev/null || true)
+    if [[ -z "$types" ]]; then
+        notify "copycat" "Clipboard is empty."
+        exit 1
+    fi
+
+    dir=$(target_dir)
+
+    if mime=$(pick_image_mime "$types"); then
+        save_image "$dir" "$mime"
+        exit 0
+    fi
+
+    # Future: text/plain -> .txt, text/uri-list -> copy referenced files, etc.
+    notify "copycat" "No image on clipboard yet (text/file support coming soon)."
+    echo "no image mime type on clipboard; available types:" >&2
+    echo "$types" >&2
+    exit 1
+}
+
+main "$@"
