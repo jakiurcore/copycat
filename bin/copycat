@@ -10,11 +10,25 @@ notify() {
     notify-send -a copycat "$@" 2>/dev/null || true
 }
 
+# Find the currently focused window's PID, trying whichever compositor
+# backend is actually available. Empty output means "unknown".
+focused_pid() {
+    if command -v hyprctl >/dev/null 2>&1; then
+        hyprctl activewindow -j 2>/dev/null | jq -r '.pid // empty'
+        return
+    fi
+    if command -v swaymsg >/dev/null 2>&1 && [[ -n "${SWAYSOCK:-}" ]]; then
+        swaymsg -t get_tree 2>/dev/null | jq -r '[.. | objects | select(.focused == true) | .pid] | first // empty'
+        return
+    fi
+    # COSMIC/GNOME/etc: no known way to query the focused window from here.
+}
+
 # Find where to save: prefer the cwd of the shell running in the
 # currently focused terminal window, fall back to DEFAULT_DIR.
 target_dir() {
     local pid children child cwd
-    pid=$(hyprctl activewindow -j 2>/dev/null | jq -r '.pid // empty') || true
+    pid=$(focused_pid) || true
 
     if [[ -n "${pid:-}" ]]; then
         children=$(pgrep -P "$pid" 2>/dev/null || true)
