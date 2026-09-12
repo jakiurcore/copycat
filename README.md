@@ -1,6 +1,6 @@
 # copycat
 
-Paste clipboard content directly to disk, like pasting an image into Signal —
+Paste clipboard content directly to disk, like pasting an image into Signal/Messenger/Whatsapp —
 except it lands as a file instead of a chat message.
 
 ## Status
